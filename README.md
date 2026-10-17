@@ -53,3 +53,17 @@ while True:
 - Resolution / FPS / depth mode / flip mode options
 - Rectified intrinsics included in observations
 - Real-world `WorldNode` lifecycle compatible with UniEnv
+
+## Observations and space metadata
+
+| Key | Shape | Dtype | Space metadata |
+| --- | --- | --- | --- |
+| `left_rgb` / `right_rgb` | `(H, W, 3)` | `uint8` | `kind="image"`, `format="rgb"` (converted from the SDK's BGRA), `layout="HWC"` |
+| `left_depth` / `right_depth` | `(H, W)` | `float32` | `kind="depth"`, `layout="HW"`, `units` from `unit` (`METER` → `"m"`, `CENTIMETER` → `"cm"`, `MILLIMETER` → `"mm"`, `INCH` → `"in"`, `FOOT` → `"ft"`), `invalid_depth_value` (the value NaN / inf pixels are replaced with) |
+| `left_intrinsics` / `right_intrinsics` | `(3, 3)` | `float32` | `kind="intrinsics"`, `frame="camera_cv"` (OpenCV `K`) |
+
+Every leaf also records `source` (the serial number as a string),
+`serial_number`, `camera_model` and `side` (`"left"` / `"right"`); images and
+depth maps carry the camera's actual `fps`. Requires `unienv>=0.0.1b16`.
+`build_zed_observation_space(height=..., width=..., ...)` builds the same space
+without a camera.

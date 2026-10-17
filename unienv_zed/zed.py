@@ -16,6 +16,7 @@ from unienv_interface.backends.numpy import (
     NumpyRNGType,
 )
 from unienv_interface.space import BoxSpace, DictSpace
+from unienv_interface.space.space_utils.metadata_utils import depth_metadata, image_metadata, metadata
 
 __all__ = [
     "ZedCameraNode",
@@ -24,6 +25,7 @@ __all__ = [
     "ZedDepthMode",
     "ZedFlipMode",
     "ZedUnit",
+    "build_zed_observation_space",
     "list_connected_zed_cameras",
 ]
 
@@ -101,34 +103,106 @@ def _default_supported_depth_mode() -> ZedDepthMode:
     return ZedDepthMode.NONE
 
 
-def _box_rgb(height: int, width: int) -> BoxSpace:
+# Space-metadata ``units`` of each ZED depth unit.
+_DEPTH_UNITS: dict[ZedUnit, str] = {
+    ZedUnit.METER: "m",
+    ZedUnit.CENTIMETER: "cm",
+    ZedUnit.MILLIMETER: "mm",
+    ZedUnit.INCH: "in",
+    ZedUnit.FOOT: "ft",
+}
+
+
+def _box_rgb(height: int, width: int, metadata: Optional[Dict[str, Any]] = None) -> BoxSpace:
     return BoxSpace(
         NumpyComputeBackend,
         low=0,
         high=255,
         dtype=np.uint8,
         shape=(height, width, 3),
+        metadata=metadata,
     )
 
 
-def _box_depth(height: int, width: int) -> BoxSpace:
+def _box_depth(height: int, width: int, metadata: Optional[Dict[str, Any]] = None) -> BoxSpace:
     return BoxSpace(
         NumpyComputeBackend,
         low=0.0,
         high=np.inf,
         dtype=np.float32,
         shape=(height, width),
+        metadata=metadata,
     )
 
 
-def _box_intrinsics() -> BoxSpace:
+def _box_intrinsics(metadata: Optional[Dict[str, Any]] = None) -> BoxSpace:
     return BoxSpace(
         NumpyComputeBackend,
         low=-np.inf,
         high=np.inf,
         dtype=np.float32,
         shape=(3, 3),
+        metadata=metadata,
     )
+
+
+def build_zed_observation_space(
+    *,
+    height: int,
+    width: int,
+    fps: Optional[float] = None,
+    serial_number: Optional[int] = None,
+    camera_model: Optional[str] = None,
+    unit: str | ZedUnit = ZedUnit.METER,
+    invalid_depth_value: float = 0.0,
+    enable_left_rgb: bool = True,
+    enable_right_rgb: bool = False,
+    enable_left_depth: bool = False,
+    enable_right_depth: bool = False,
+    include_intrinsics: bool = True,
+) -> DictSpace:
+    """The observation space of a :class:`ZedCameraNode`, built without a camera.
+
+    Every leaf carries space metadata: ``source`` is the camera serial number
+    and ``camera_model`` / ``serial_number`` / ``side`` (``"left"`` or
+    ``"right"``) identify the sensor; images are ``rgb`` / ``HWC`` (converted
+    from the SDK's BGRA) at the camera ``fps``; depth maps are in the
+    configured ``unit`` with invalid (NaN / inf) pixels replaced by
+    ``invalid_depth_value``; intrinsics are OpenCV ``camera_cv`` matrices.
+    """
+    unit = _coerce_enum(unit, ZedUnit, "unit")
+    camera = dict(
+        source=None if serial_number is None else str(serial_number),
+        serial_number=None if serial_number is None else int(serial_number),
+        camera_model=camera_model,
+    )
+
+    def rgb(side: str) -> BoxSpace:
+        return _box_rgb(height, width, image_metadata(fps=fps, side=side, **camera))
+
+    def depth(side: str) -> BoxSpace:
+        return _box_depth(height, width, depth_metadata(
+            units=_DEPTH_UNITS[unit], fps=fps, side=side,
+            invalid_depth_value=float(invalid_depth_value), **camera,
+        ))
+
+    def intrinsics(side: str) -> BoxSpace:
+        return _box_intrinsics(metadata("intrinsics", frame="camera_cv", side=side, **camera))
+
+    spaces: dict[str, BoxSpace] = {}
+    if enable_left_rgb:
+        spaces["left_rgb"] = rgb("left")
+    if enable_right_rgb:
+        spaces["right_rgb"] = rgb("right")
+    if enable_left_depth:
+        spaces["left_depth"] = depth("left")
+    if enable_right_depth:
+        spaces["right_depth"] = depth("right")
+    if include_intrinsics:
+        spaces["left_intrinsics"] = intrinsics("left")
+        if enable_right_rgb or enable_right_depth:
+            spaces["right_intrinsics"] = intrinsics("right")
+    return DictSpace(NumpyComputeBackend, spaces)
 
 
 def _zed_image_to_rgb(image: Any) -> np.ndarray:
@@ -366,20 +440,20 @@ class ZedCameraNode(WorldNode[
         self.right_intrinsics = _zed_camera_intrinsics(self._calibration.right_cam)
 
     def _build_observation_space(self) -> DictSpace:
-        spaces: dict[str, BoxSpace] = {}
-        if self.enable_left_rgb:
-            spaces["left_rgb"] = _box_rgb(self.actual_height, self.actual_width)
-        if self.enable_right_rgb:
-            spaces["right_rgb"] = _box_rgb(self.actual_height, self.actual_width)
-        if self.enable_left_depth:
-            spaces["left_depth"] = _box_depth(self.actual_height, self.actual_width)
-        if self.enable_right_depth:
-            spaces["right_depth"] = _box_depth(self.actual_height, self.actual_width)
-        if self.include_intrinsics:
-            spaces["left_intrinsics"] = _box_intrinsics()
-            if self.enable_right_rgb or self.enable_right_depth:
-                spaces["right_intrinsics"] = _box_intrinsics()
-        return DictSpace(NumpyComputeBackend, spaces)
+        return build_zed_observation_space(
+            height=self.actual_height,
+            width=self.actual_width,
+            fps=self.actual_fps if self.actual_fps > 0 else None,
+            serial_number=self.serial_number,
+            camera_model=self.camera_model,
+            unit=self.unit,
+            invalid_depth_value=self.invalid_depth_value,
+            enable_left_rgb=self.enable_left_rgb,
+            enable_right_rgb=self.enable_right_rgb,
+            enable_left_depth=self.enable_left_depth,
+            enable_right_depth=self.enable_right_depth,
+            include_intrinsics=self.include_intrinsics,
+        )
 
     def _grab(self) -> bool:
         err = self.zed.grab(self._runtime_parameters)

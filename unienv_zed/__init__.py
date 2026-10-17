@@ -5,6 +5,7 @@ from .zed import (
     ZedDepthMode,
     ZedFlipMode,
     ZedUnit,
+    build_zed_observation_space,
     list_connected_zed_cameras,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "ZedDepthMode",
     "ZedFlipMode",
     "ZedUnit",
+    "build_zed_observation_space",
     "list_connected_zed_cameras",
 ]
