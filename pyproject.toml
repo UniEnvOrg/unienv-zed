@@ -14,11 +14,11 @@ dependencies = [
 test = ["pytest"]
 
 [project.urls]
-Homepage = "https://github.com/UniEnvOrg/zed_camera_adaptor"
-Documentation = "https://github.com/UniEnvOrg/zed_camera_adaptor"
-Repository = "https://github.com/UniEnvOrg/zed_camera_adaptor"
-Issues = "https://github.com/UniEnvOrg/zed_camera_adaptor/issues"
-Changelog = "https://github.com/UniEnvOrg/zed_camera_adaptor/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/UniEnvOrg/unienv-zed"
+Documentation = "https://github.com/UniEnvOrg/unienv-zed"
+Repository = "https://github.com/UniEnvOrg/unienv-zed"
+Issues = "https://github.com/UniEnvOrg/unienv-zed/issues"
+Changelog = "https://github.com/UniEnvOrg/unienv-zed/blob/main/CHANGELOG.md"
 
 [tool.setuptools.packages.find]
 include = ["*"]

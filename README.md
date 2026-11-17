@@ -1,4 +1,4 @@
-# zed_camera_adaptor
+# unienv-zed
 
 ZED camera node adaptor for UniEnv.
 
