@@ -59,8 +59,8 @@ while True:
 | Key | Shape | Dtype | Space metadata |
 | --- | --- | --- | --- |
 | `left_rgb` / `right_rgb` | `(H, W, 3)` | `uint8` | `kind="image"`, `format="rgb"` (converted from the SDK's BGRA), `layout="HWC"` |
-| `left_depth` / `right_depth` | `(H, W)` | `float32` | `kind="depth"`, `layout="HW"`, `units` from `unit` (`METER` → `"m"`, `CENTIMETER` → `"cm"`, `MILLIMETER` → `"mm"`, `INCH` → `"in"`, `FOOT` → `"ft"`), `invalid_depth_value` (the value NaN / inf pixels are replaced with) |
-| `left_intrinsics` / `right_intrinsics` | `(3, 3)` | `float32` | `kind="intrinsics"`, `frame="camera_cv"` (OpenCV `K`) |
+| `left_depth` / `right_depth` | `(H, W)` | `float32` | `kind="depth"`, `layout="HW"`, `units` from `unit` (`METER` → `"m"`, `CENTIMETER` → `"cm"`, `MILLIMETER` → `"mm"`, `INCH` → `"in"`, `FOOT` → `"ft"`), `invalid_depth_value` (the value NaN / inf pixels are replaced with; any float but NaN, the space's lower bound is `min(0, invalid_depth_value)`) |
+| `left_intrinsics` / `right_intrinsics` | `(3, 3)` | `float32` | `kind="intrinsics"`, `frame="camera_cv"` (OpenCV `K`), `units="px"` |
 
 Every leaf also records `source` (the serial number as a string),
 `serial_number`, `camera_model` and `side` (`"left"` / `"right"`); images and

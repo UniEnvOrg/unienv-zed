@@ -124,10 +124,28 @@ def _box_rgb(height: int, width: int, metadata: Optional[Dict[str, Any]] = None)
     )
 
 
-def _box_depth(height: int, width: int, metadata: Optional[Dict[str, Any]] = None) -> BoxSpace:
+def _check_invalid_depth_value(invalid_depth_value: float) -> float:
+    """``invalid_depth_value`` as a float; NaN is rejected as no bounds contain it."""
+    value = float(invalid_depth_value)
+    if np.isnan(value):
+        raise ValueError(
+            "invalid_depth_value must not be NaN: NaN pixels would lie outside the depth space. "
+            "Use e.g. 0.0, -1.0 or inf to mark invalid depth."
+        )
+    return value
+
+
+def _box_depth(
+    height: int,
+    width: int,
+    metadata: Optional[Dict[str, Any]] = None,
+    invalid_depth_value: float = 0.0,
+) -> BoxSpace:
+    # Valid depth is >= 0; invalid pixels hold ``invalid_depth_value``, which may
+    # be negative (e.g. -1.0 or -inf), so the lower bound includes it.
     return BoxSpace(
         NumpyComputeBackend,
-        low=0.0,
+        low=min(0.0, float(invalid_depth_value)),
         high=np.inf,
         dtype=np.float32,
         shape=(height, width),
@@ -168,9 +186,12 @@ def build_zed_observation_space(
     ``"right"``) identify the sensor; images are ``rgb`` / ``HWC`` (converted
     from the SDK's BGRA) at the camera ``fps``; depth maps are in the
     configured ``unit`` with invalid (NaN / inf) pixels replaced by
-    ``invalid_depth_value``; intrinsics are OpenCV ``camera_cv`` matrices.
+    ``invalid_depth_value`` (any float but NaN; the lower bound of the depth
+    spaces is ``min(0, invalid_depth_value)``); intrinsics are OpenCV
+    ``camera_cv`` matrices in pixels (``units="px"``).
     """
     unit = _coerce_enum(unit, ZedUnit, "unit")
+    invalid_depth_value = _check_invalid_depth_value(invalid_depth_value)
     camera = dict(
         source=None if serial_number is None else str(serial_number),
         serial_number=None if serial_number is None else int(serial_number),
@@ -183,11 +204,11 @@ def build_zed_observation_space(
     def depth(side: str) -> BoxSpace:
         return _box_depth(height, width, depth_metadata(
             units=_DEPTH_UNITS[unit], fps=fps, side=side,
-            invalid_depth_value=float(invalid_depth_value), **camera,
-        ))
+            invalid_depth_value=invalid_depth_value, **camera,
+        ), invalid_depth_value=invalid_depth_value)
 
     def intrinsics(side: str) -> BoxSpace:
-        return _box_intrinsics(metadata("intrinsics", frame="camera_cv", side=side, **camera))
+        return _box_intrinsics(metadata("intrinsics", frame="camera_cv", units="px", side=side, **camera))
 
     spaces: dict[str, BoxSpace] = {}
     if enable_left_rgb:
@@ -320,7 +341,7 @@ class ZedCameraNode(WorldNode[
         self.sdk_verbose = int(sdk_verbose)
         self.control_timestep = control_timestep
         self.update_timestep = update_timestep
-        self.invalid_depth_value = float(invalid_depth_value)
+        self.invalid_depth_value = _check_invalid_depth_value(invalid_depth_value)
         self.raise_on_grab_failure = bool(raise_on_grab_failure)
         self._depth_enabled = self.enable_left_depth or self.enable_right_depth
         self.depth_mode = (

@@ -1,5 +1,6 @@
 """Camera-free tests of the ZED observation space and its metadata."""
 
+import numpy as np
 import pytest
 
 from unienv_interface.space.space_utils.metadata_utils import spaces_equal_with_metadata, validate_metadata
@@ -41,11 +42,13 @@ def test_all_outputs_are_described():
         assert depth["units"] == "m"
         assert depth["layout"] == "HW"
         assert depth["invalid_depth_value"] == 0.0
+        assert float(space[f"{side}_depth"].low.min()) == 0.0
         assert depth["side"] == side
 
         intrinsics = space[f"{side}_intrinsics"].metadata
         assert intrinsics["kind"] == "intrinsics"
         assert intrinsics["frame"] == "camera_cv"
+        assert intrinsics["units"] == "px"
         assert intrinsics["side"] == side
 
 
@@ -57,6 +60,7 @@ def test_depth_units_follow_the_configured_unit(unit, units):
     space = _build(unit=unit, invalid_depth_value=-1.0)
     assert space["left_depth"].metadata["units"] == units
     assert space["left_depth"].metadata["invalid_depth_value"] == -1.0
+    validate_metadata(space)
 
 
 def test_left_only_defaults():
@@ -85,3 +89,32 @@ def test_node_builds_its_space_with_the_helper():
     )
     assert spaces_equal_with_metadata(space, expected)
     assert space["left_depth"].metadata["units"] == "mm"
+
+
+@pytest.mark.parametrize(
+    "invalid_depth_value, low",
+    [(0.0, 0.0), (-1.0, -1.0), (5.0, 0.0), (np.inf, 0.0), (-np.inf, -np.inf)],
+)
+def test_depth_space_contains_invalid_depth_value(invalid_depth_value, low):
+    from unienv_zed.zed import _zed_depth_to_array
+
+    space = _build(invalid_depth_value=invalid_depth_value, height=4, width=5)
+    for side in ("left", "right"):
+        depth_space = space[f"{side}_depth"]
+        np.testing.assert_array_equal(depth_space.low, low)
+        assert np.all(np.isposinf(depth_space.high))
+
+    class FakeMat:
+        def get_data(self):
+            data = np.full((4, 5), 1.5, dtype=np.float32)
+            data[0, 0], data[0, 1], data[0, 2] = np.nan, np.inf, -np.inf
+            return data
+
+    depth = _zed_depth_to_array(FakeMat(), invalid_depth_value)
+    assert depth[0, 0] == depth[0, 1] == depth[0, 2] == invalid_depth_value
+    assert space["left_depth"].contains(depth)
+
+
+def test_nan_invalid_depth_value_is_rejected():
+    with pytest.raises(ValueError, match="invalid_depth_value"):
+        _build(invalid_depth_value=float("nan"))
